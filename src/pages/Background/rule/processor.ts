@@ -10,9 +10,9 @@ import getTarget from "./handlers/targetHandler"
 
 export type ProcessContext = {
   /**
-   * 自身插件的信息
+   * 自身扩展的 ID
    */
-  self: chrome.management.ExtensionInfo
+  selfId: string
   /**
    * 当前激活的 tab
    */
@@ -107,7 +107,7 @@ async function process(
     return
   }
   // 执行目标中，过滤掉自己
-  const targetExtensionIds = targetIdArray.filter((id) => id !== ctx.self.id)
+  const targetExtensionIds = targetIdArray.filter((id) => id !== ctx.selfId)
 
   handle(targetExtensionIds, rule, ctx)
 }

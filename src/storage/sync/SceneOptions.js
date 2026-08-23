@@ -4,6 +4,17 @@ import { LocalOptions } from "../local/LocalOptions"
 import { normalizeActiveSceneIds, updateActiveSceneIds } from "../local/activeSceneState"
 import { SyncOptionsStorage } from "./options-storage"
 
+export async function resolveActiveSceneIds(storedIds, scenes, local = new LocalOptions()) {
+  const existingIds = new Set(scenes.map((scene) => scene.id))
+  const activeIds = storedIds.filter((id) => existingIds.has(id))
+
+  // Clean up IDs of deleted scenes once they are observed at the domain-storage boundary.
+  if (activeIds.length !== storedIds.length) {
+    await local.setActiveSceneIds(activeIds)
+  }
+  return activeIds
+}
+
 export const SceneOptions = {
   /** @deprecated Use getActiveIds for multi-scene aware code. */
   async getActive() {
@@ -20,14 +31,7 @@ export const SceneOptions = {
   async getActiveIds() {
     const local = new LocalOptions()
     const [storedIds, scenes] = await Promise.all([local.getActiveSceneIds(), this.getAll()])
-    const existingIds = new Set(scenes.map((scene) => scene.id))
-    const activeIds = storedIds.filter((id) => existingIds.has(id))
-
-    // Clean up IDs of deleted scenes once they are observed at the domain-storage boundary.
-    if (activeIds.length !== storedIds.length) {
-      await local.setActiveSceneIds(activeIds)
-    }
-    return activeIds
+    return resolveActiveSceneIds(storedIds, scenes, local)
   },
 
   /** Persist a normalized collection and return the canonical value used by UI and rules. */

@@ -1,9 +1,9 @@
-import lodash from "lodash"
 import chromeP from "webext-polyfill-kinda"
 
 import type { IExtensionManager } from ".../types/global"
 import logger from ".../utils/logger"
 import ConvertRuleToV2 from "./RuleConverter"
+import { createLatestTaskRunner } from "./latestTaskRunner"
 import processRule from "./processor"
 
 export class RuleHandler {
@@ -11,7 +11,13 @@ export class RuleHandler {
    *
    */
   constructor() {
-    this.debounceDo = lodash.debounce(this.do, 20)
+    this.runLatest = createLatestTaskRunner(async () => {
+      try {
+        await this.do()
+      } catch (error) {
+        console.error("[规则执行失败]", error)
+      }
+    })
   }
 
   /**
@@ -42,20 +48,22 @@ export class RuleHandler {
   onCurrentScenesChanged(activeSceneIds: string[]) {
     // Copy message data so later mutations in a sender cannot affect cached rule state.
     this.#activeSceneIds = [...activeSceneIds]
-    this.invokeDebounceDo()
+    this.invokeDo()
   }
 
-  onCurrentUrlChanged(tabInfo: chrome.tabs.Tab) {
-    this.#currentTabInfo = tabInfo
-    this.invokeDebounceDo()
+  onCurrentUrlChanged(tabInfo?: chrome.tabs.Tab) {
+    if (tabInfo) {
+      this.#currentTabInfo = tabInfo
+    }
+    this.invokeDo()
   }
 
   onTabClosed(_tabId: number, _removeInfo: unknown) {
-    this.invokeDebounceDo()
+    this.invokeDo()
   }
 
   onWindowClosed(_windowsId: number) {
-    this.invokeDebounceDo()
+    this.invokeDo()
   }
 
   setRules(rules: unknown[]) {
@@ -63,7 +71,7 @@ export class RuleHandler {
       return
     }
     this._rules = this.convertRule(rules)
-    this.invokeDebounceDo()
+    this.invokeDo()
   }
 
   init(
@@ -78,7 +86,8 @@ export class RuleHandler {
     this._rules = this.convertRule(rules)
     this.#groups = groups
     this.EM = EM
-    this.debounceDo()
+    this.initialized = true
+    this.invokeDo()
   }
 
   private convertRule(rules: unknown[]): ruleV2.IRuleConfig[] {
@@ -92,20 +101,23 @@ export class RuleHandler {
     return ruleList
   }
 
-  private async invokeDebounceDo() {
-    this.debounceDo()
+  private invokeDo() {
+    if (this.initialized) {
+      this.runLatest()
+    }
   }
 
-  private debounceDo
+  private initialized = false
+
+  private runLatest: () => void
 
   private async do() {
     logger().debug("[Extension Manager] 执行规则")
 
-    const self = await chromeP.management.getSelf()
     const tabs = await chromeP.tabs.query({})
 
     const ctx = {
-      self,
+      selfId: chrome.runtime.id,
       tabs,
       tab: this.#currentTabInfo ?? null,
       EM: this.EM
